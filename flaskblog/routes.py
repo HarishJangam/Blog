@@ -1,105 +1,148 @@
 import os
 import secrets
 #from PIL import Image
-from flask import render_template, url_for, flash, redirect, request
-from flaskblog import app, db, bcrypt
-from flaskblog.forms import RegistrationForm, LoginForm, UpdateAccountForm
-from flaskblog.models import User, Post
-from flask_login import login_user, current_user, logout_user, login_required
+from flask import Flask, request, Response
+from uuid import uuid4
+import json
+app = Flask(__name__)
 
+users = []
+DBNAME = "users.json"
+active_logins = []
 
-posts = [
-    {
-        'author': 'Corey Schafer',
-        'title': 'Blog Post 1',
-        'content': 'First post content',
-        'date_posted': 'April 20, 2018'
-    },
-    {
-        'author': 'Jane Doe',
-        'title': 'Blog Post 2',
-        'content': 'Second post content',
-        'date_posted': 'April 21, 2018'
-    }
-]
+def save_users(users) -> None:
+    with open("users.json", "w") as f:
+        json.dump(users, f)
 
+def user_already_exists(users, username) -> bool:
+    pass
 
-@app.route("/")
-@app.route("/home")
-def home():
-    return render_template('home.html', posts=posts)
-
-
-@app.route("/about")
-def about():
-    return render_template('about.html', title='About')
-
-
-@app.route("/register", methods=['GET', 'POST'])
-def register():
-    if current_user.is_authenticated:
-        return redirect(url_for('home'))
-    form = RegistrationForm()
-    if form.validate_on_submit():
-        hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
-        user = User(username=form.username.data, email=form.email.data, password=hashed_password)
-        db.session.add(user)
-        db.session.commit()
-        flash('Your account has been created! You are now able to log in', 'success')
-        return redirect(url_for('login'))
-    return render_template('register.html', title='Register', form=form)
-
-
-@app.route("/login", methods=['GET', 'POST'])
-def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('home'))
-    form = LoginForm()
-    if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data).first()
-        if user and bcrypt.check_password_hash(user.password, form.password.data):
-            login_user(user, remember=form.remember.data)
-            next_page = request.args.get('next')
-            return redirect(next_page) if next_page else redirect(url_for('home'))
-        else:
-            flash('Login Unsuccessful. Please check email and password', 'danger')
-    return render_template('login.html', title='Login', form=form)
-
-
-@app.route("/logout")
-def logout():
-    logout_user()
-    return redirect(url_for('home'))
-
-
-def save_picture(form_picture):
-    random_hex = secrets.token_hex(8)
-    _, f_ext = os.path.splitext(form_picture.filename)
-    picture_fn = random_hex + f_ext
-    picture_path = os.path.join(app.root_path, 'static/profile_pics', picture_fn)
-
-    form_picture.save(picture_path)
+def not_authenticated(token):
+    if token in active_logins:
+        return False
     
+    return True
 
-    return picture_fn
+def invalid_user(users, creds) -> bool:
+    for user in users:
+        if user.get("username") == creds.get("username") and user.get("password") == creds.get("password"):
+            return False
+
+    return True
+
+def get_user_by_username(users, username) -> dict:
+    for user in users:
+        if user.get("username") == username:
+            return user
+    
+    return {}
+
+def update_users(users, add_user= {}, del_user = "", update_user = {}):
+    global user
+    if add_user:
+        users.append(add_user)
+    
+    if del_user:
+        updated_users = []
+        for user in users:
+            if user.get("username") != del_user:
+                updated_users.append(user)
+        users = updated_users
+        save_users(users)
+        
+    if update_user:
+        updated_users = []
+        for user in users:
+            if user.get("username") == update_user.get("username"):
+                updated_users.append(update_user)
+                continue
+        users = updated_users
+        save_users(users)
+        
+@app.route("/user", methods=['POST'])
+def register_new_user():
+    """
+        user = {
+            "fullname": "",
+            "age": "",
+            "username": "",
+            "password": ""
+        }
+        validate user details:
+        1. All attributes are provided  are provideded or not
+        2. Validate attributes data types
+        3. extra info(not accepted)
+        4. username should be unique
+    """
+    new_user = request.json # dict
+    user_id = len(users) + 1
+    new_user["user_id"] = user_id
+    users.append(new_user)
+    save_users(users)
+    return new_user
+
+@app.route("/user", methods=['GET'])
+def get_all_user():
+    headers = request.headers
+    if not_authenticated(headers.get("token")):
+        return Response(response=json.dumps({"msg": "Please do login"}).encode(),content_type="application/json", status=401)
+    return users
+
+@app.route("/user/<username>", methods = ["GET"])
+def get_single_user(username):
+    headers = request.headers
+    if not_authenticated(headers.get("token")):
+        return Response(response=json.dumps({"msg": "Please do login"}).encode(),content_type="application/json", status=401)    
+    user = get_user_by_username(users, username)
+    return user
 
 
-@app.route("/account", methods=['GET', 'POST'])
-@login_required
-def account():
-    form = UpdateAccountForm()
-    if form.validate_on_submit():
-        if form.picture.data:
-            picture_file = save_picture(form.picture.data)
-            current_user.image_file = picture_file
-        current_user.username = form.username.data
-        current_user.email = form.email.data
-        db.session.commit()
-        flash('Your account has been updated!', 'success')
-        return redirect(url_for('account'))
-    elif request.method == 'GET':
-        form.username.data = current_user.username
-        form.email.data = current_user.email
-    image_file = url_for('static', filename='profile_pics/' + current_user.image_file)
-    return render_template('account.html', title='Account',
-                           image_file=image_file, form=form)
+@app.route("/user/<username>", methods = ["PATCH"])
+def update_single_user(username):
+    headers = request.headers
+    if not_authenticated(headers.get("token")):
+        return Response(response=json.dumps({"msg": "Please do login"}).encode(),content_type="application/json", status=401)    
+    user = get_user_by_username(users, username)
+    req_body = request.json
+    user = {**user, **req_body}
+    update_users(users, update_user=user)
+    return user
+
+
+@app.route("/user/<username>", methods = ["DELETE"])
+def delete_single_user(username):
+    headers = request.headers
+    if not_authenticated(headers.get("token")):
+        return Response(response=json.dumps({"msg": "Please do login"}).encode(),content_type="application/json", status=401)    
+    update_users(users, del_user=username)
+    return user
+
+
+
+@app.route("/login", methods=['POST'])
+def do_login():
+    """
+        creds = {
+            "username" : "Harish",
+            "password": "password"
+        }
+        validate user details:
+        1. username and password are provideded or not
+        2. extra info(not accepted)
+    """
+    creds = request.json
+    
+    if invalid_user(users, creds):
+        return Response(response=json.dumps({"msg": "Invalid user"}).encode(),content_type="application/json", status=401)
+    
+    token = str(uuid4())
+    active_logins.append(token)
+    return Response(response=json.dumps({"msg": "Login Successfully"}).encode(),content_type="application/json",status=200, headers={"token": token})
+
+
+
+with open("users.json", "r") as f:
+    users = json.load(f)
+
+if __name__=='__main__':
+	app.run(debug=True)
