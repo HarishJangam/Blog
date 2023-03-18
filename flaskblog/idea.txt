@@ -1,0 +1,59 @@
+"""
+request: client to server
+    url http://localhost/login
+    1. headers ( content type: image/text/json/....), Cookie, method,
+    2. Body = {}
+
+response: server to client
+    1. headers ( content type: image/text/json/....), Cookie, 
+    2. Body = {}
+
+"""
+"""
+method: GET/POST/PATCH/PUT/DELETE ..
+GET -> with id == give me all data
+post -> create something
+patch -> update single filed(partial)
+put -> update
+delete -> delete
+"""
+
+"""
+Features:
+1. create user, update user, get users, get user, delete user, login
+2. feed: []
+"""
+
+"""
+status codes:
+200 -> success, ok, working, progresss,
+301, redirections
+400 -> client side error(invalid body, url, moethod, authorization)
+500 -> server errors
+"""
+
+"""
+read about:
+1. HTTP methods
+2. What to do after login
+3. authenticate for every action(modify)
+4. sessions, cookies
+5. HTTP headers
+6. status codes
+7. routing respective to methods
+8. rest API
+"""
+"""
+Improvements:
+1. add validations
+2. add exceptions
+3. add log messages
+4. return proper error messages
+5. password hashing
+6. connect SQLite data base
+
+7. Add Newsfeed routes
+"""
+
+
+# token:202525202602606,timestamp:18-03-2023 16:24:23,expirty=300
